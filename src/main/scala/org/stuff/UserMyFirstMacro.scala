@@ -14,7 +14,7 @@ object UserMyFirstMacro {
   //    println(output2)
 
   //    inline def vvv = "hello"
-  //    val output3 = MyFirstMacro.myMac2(vvv) //helloooooo
+  //    val output3 = MyFirstMacro.myMac2(vvv) //hellooooooooo
   //    println(output3)
   // }
 
