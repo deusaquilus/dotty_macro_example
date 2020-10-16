@@ -256,46 +256,93 @@ object Dsl {
     val quillAst: Ast = Parser.astParse(quotedRaw)
     //println(pprint.apply(quillAst))
 
+    trait Lifter[T] { 
+      def lift(element: T): Expr[T]
+    }
     object Lifter {
-        import BooleanOperator._
-        import NumericOperator._
-        import StringOperator.`startsWith`
-        import SetOperator.`contains`
-        import StringOperator.`+`
+      import BooleanOperator._
+      import NumericOperator._
+      import StringOperator.`startsWith`
+      import SetOperator.`contains`
+      import StringOperator.`+`
 
-      def lift(op: BinaryOperator): Expr[BinaryOperator] = {
-        op match {
-          case _ if (op == EqualityOperator.`==`) => '{ EqualityOperator.`==` }
-          case _ if (op == EqualityOperator.`!=`) => '{ EqualityOperator.`!=` }
-          case `&&`  => '{ BooleanOperator.`&&` }
-          case `||` => '{ BooleanOperator.`||` }
-          case `>`  => '{ NumericOperator.`>`  }
-          case `>=`  => '{ NumericOperator.`>=` }
-          case `<`  => '{ NumericOperator.`<`  }
-          case `<=` => '{ NumericOperator.`<=` }
-          case `+` => '{ StringOperator.`+` }
-          case `startsWith` => '{ StringOperator.`startsWith` }
-          case `contains` => '{ SetOperator.`contains` }
-          case _ => qctx.throwError(s"Not consider operator: ${op}, will add later")
+      implicit def binaryOperationLifter: Lifter[BinaryOperator] = new Lifter[BinaryOperator] {
+        def lift(op: BinaryOperator): Expr[BinaryOperator] = {
+          op match {
+            case _ if (op == EqualityOperator.`==`) => '{ EqualityOperator.`==` }
+            case _ if (op == EqualityOperator.`!=`) => '{ EqualityOperator.`!=` }
+            case `&&`  => '{ BooleanOperator.`&&` }
+            case `||` => '{ BooleanOperator.`||` }
+            case `>`  => '{ NumericOperator.`>`  }
+            case `>=`  => '{ NumericOperator.`>=` }
+            case `<`  => '{ NumericOperator.`<`  }
+            case `<=` => '{ NumericOperator.`<=` }
+            case `+` => '{ StringOperator.`+` }
+            case `startsWith` => '{ StringOperator.`startsWith` }
+            case `contains` => '{ SetOperator.`contains` }
+            case _ => qctx.throwError(s"Not consider operator: ${op}, will add later")
+          }
         }
       }
 
-      def apply(ast: Ast): Expr[Ast] =
-        ast match {
-          case Entity(name, _)            => '{ Entity(${Expr(name)}, List()) }
-          case Filter(query, alias, body) => '{ Filter(${Lifter(query)}, ${Lifter.apply(alias).asInstanceOf[Expr[Ident]] /* must be Expr[Ident] */}, ${Lifter(body)}) }
+      // trait Lifter[T] { 
+      //   def lift(element: T): Expr[T]
+      // }
+      implicit def identLifter: Lifter[Ident] = new Lifter[Ident] {
+        def lift(element: Ident): Expr[Ident] = element match {
           case Ident(id:String)           => '{ Ident(${Expr(id)}) }
-          case Property(id, name)         => '{ Property(${Lifter(id)}, ${Expr(name)}) }
+        }
+      }
+
+      implicit val stringLifter: Lifter[String] = new Lifter[String] {
+        def lift(str: String): Expr[String] = Expr(str)
+      }
+
+      // Given: there is a lifter on T
+      // Therefore: there is a HasLifter class on T
+      implicit class HasLifter[T](element: T)(implicit lifter: Lifter[T]) {
+        def lift = lifter.lift(element)
+        def liftA = lifter.lift(element)
+      }
+
+
+
+      // Given: You have a lifter of T
+      // Therefore: We can give you a lifter of List[T]
+      implicit def listLifter[T: Type](implicit elementLifter: Lifter[T]): Lifter[List[T]] = new Lifter[List[T]] {
+        def lift(list: List[T]): Expr[List[T]] = {
+          val listOfLifts = list.map(e => elementLifter.lift(e))
+          // List[Expr[T]] => Expr[List[T]]
+          // List[Container[Honey]] => Container[List[Honey]]
+          Expr.ofList(listOfLifts /*Expr[T]*/)
+        }
+      }
+
+      implicit def propertyAliasLifer: Lifter[PropertyAlias] = new Lifter[PropertyAlias] {
+        def lift(propertyAlias: PropertyAlias): Expr[PropertyAlias] =
+          propertyAlias match {
+            case PropertyAlias(paths, alias) =>
+              '{ PropertyAlias(${paths.liftA}, ${alias.lift}) }
+          }
+      }
+
+      implicit def astLifter: Lifter[Ast] = new Lifter[Ast] {
+        def lift(ast: Ast): Expr[Ast] =
+          ast match {
+          case id: Ident => id.lift
+          case Entity(name, propertyAlias)            => '{ Entity(${name.lift}, ${propertyAlias.liftA}) }
+          case Filter(query, alias, body) => '{ Filter(${query.lift}, ${alias.lift}, ${body.lift}) }
+          case Property(inner, name)      => '{ Property(${inner.lift}, ${name.lift}) }
           case Constant(value: String)    => '{ Constant(${Expr(value)}) }
           case BinaryOperation(a, binaryOp,b) =>
-            val aExpr = apply(a)
-            val binaryOpExpr = lift(binaryOp)
-            val bExpr = apply(b)
-            '{BinaryOperation($aExpr, $binaryOpExpr, $bExpr)}
+            '{BinaryOperation(${a.lift}, ${binaryOp.lift}, ${b.lift})}
             
           case _ => 
             qctx.throwError(s"Cannot lift the tree:\n${pprint.apply(ast)}")
         }
+      }
+      
+      def apply(ast: Ast): Expr[Ast] = ast.lift
     }
 
 

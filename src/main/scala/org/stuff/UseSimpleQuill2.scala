@@ -13,12 +13,15 @@ object UseSimpleQuill2 {
     }
     PrintMac(q) //hello
 
+    val v = List(1,2,3)
+    v.lift
+
     // //inline def q1 = quote(unquote(q)/*Quoted[Query[Person]]*/.filter(p => p.isRussian))
     inline def q1 = quote(q.filter(p => p.isRussian))
 
     inline def q2 = quote(q1.filter(p => p.isHuman))
 
-    run(q2)
+    println(pprint.apply(q2.ast))
 
     // //PrintMac(q1)
     
