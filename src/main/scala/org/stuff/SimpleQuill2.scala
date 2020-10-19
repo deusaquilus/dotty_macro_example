@@ -63,7 +63,7 @@ object Dsl {
 
           case Unseal(Typed(inside /*Term*/, _)) => astParse(inside.seal)
 
-          case _ => Reporting.throwError(
+          case _ => report.throwError(
             s"""
             |Cannot run the tree: 
             |=================== Simple ==============
@@ -139,7 +139,7 @@ object Dsl {
         case '{ StringOperator.`+` } => StringOperator.`+`
         case '{ StringOperator.`startsWith` } => `startsWith`
         case '{ SetOperator.`contains` } => `contains`
-        case _ => Reporting.throwError(s"Not consider operator (in unlift): ${op}, will add later")
+        case _ => report.throwError(s"Not consider operator (in unlift): ${op}, will add later")
       }
     }
 
@@ -175,7 +175,7 @@ object Dsl {
 
 
         case _ => 
-          Reporting.throwError(
+          report.throwError(
           s"""|Cannot unlift the tree: 
               |=================== Simple ==============
               |${CodeFormatter.apply(s"object Foo { ${expr.show} }")}
@@ -271,7 +271,7 @@ object Dsl {
 
           case Unseal(Typed(inside /*Term*/, _)) => astParse(inside.seal)
 
-          case _ => Reporting.throwError(
+          case _ => report.throwError(
             s"""
             |Cannot parse the tree: 
             |=================== Simple ==============
@@ -313,7 +313,7 @@ object Dsl {
             case `+` => '{ StringOperator.`+` }
             case `startsWith` => '{ StringOperator.`startsWith` }
             case `contains` => '{ SetOperator.`contains` }
-            case _ => Reporting.throwError(s"Not consider operator: ${op}, will add later")
+            case _ => report.throwError(s"Not consider operator: ${op}, will add later")
           }
         }
       }
@@ -371,7 +371,7 @@ object Dsl {
             '{BinaryOperation(${a.lift}, ${binaryOp.lift}, ${b.lift})}
             
           case _ => 
-            Reporting.throwError(s"Cannot lift the tree:\n${pprint.apply(ast)}")
+            report.throwError(s"Cannot lift the tree:\n${pprint.apply(ast)}")
         }
       }
       
