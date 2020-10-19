@@ -47,7 +47,7 @@ object Dsl {
     import qctx.tasty.{_, given _}
     val q = qRaw.unseal.underlyingArgument.seal
     
-    val unlifter = new Unlifter
+    val unlifter = new UnlifterEngine
     import unlifter._
     val unsealUtil = new UnsealUtil
     import unsealUtil.{qctx => _, _}
@@ -63,7 +63,7 @@ object Dsl {
 
           case Unseal(Typed(inside /*Term*/, _)) => astParse(inside.seal)
 
-          case _ => qctx.throwError(
+          case _ => Reporting.throwError(
             s"""
             |Cannot run the tree: 
             |=================== Simple ==============
@@ -99,12 +99,26 @@ object Dsl {
     '{ $quoted.unquote } /*Quoted[Query[T]] => Query[T]*/
   } 
 
-
-  class Unlifter(implicit qctx: QuoteContext) {
+  class UnlifterEngine(implicit qctx: QuoteContext) {
     import qctx.tasty.{Type => TTYpe, Ident => TIdent, Constant => TConstant, _, given _}
-
     val unsealUtil = new UnsealUtil
     import unsealUtil._
+
+    object UnliftLibrary {
+      trait Unlifter[T] {
+        def unlift(elem: Expr[T]): T
+      }
+
+      implicit def entityUnlifter: Unlifter[Entity] = new Unlifter[Entity] {
+        def unlift(elem: Expr[Entity]): Entity = elem match {
+          case '{ Entity(${Unseal(Literal(TConstant(name: String)))}: String, $list) } => Entity(name, List())
+        }
+      }
+      implicit class HasUnlifter[T](elem: Expr[T])(implicit unlifter: Unlifter[T]) {
+        def applyUnlift: T = unlifter.unlift(elem)
+      }
+    }
+    import UnliftLibrary._
 
     def unlift(op: Expr[BinaryOperator]): BinaryOperator = {
       import EqualityOperator.{`==` => ee, `!=` => ne}
@@ -125,13 +139,13 @@ object Dsl {
         case '{ StringOperator.`+` } => StringOperator.`+`
         case '{ StringOperator.`startsWith` } => `startsWith`
         case '{ SetOperator.`contains` } => `contains`
-        case _ => qctx.throwError(s"Not consider operator (in unlift): ${op}, will add later")
+        case _ => Reporting.throwError(s"Not consider operator (in unlift): ${op}, will add later")
       }
     }
 
     def apply(expr: Expr[Ast]): Ast =
       expr match {
-        case '{ Entity(${Unseal(Literal(TConstant(name: String)))}: String, $list) } => Entity(name, List())
+        case '{ $e: Entity } => e.applyUnlift
         // Filter(inside: Ast, id: Ident, body: Ast)
         // Filter(Entity("Person"), Ident("p"), Property(Ident("p"), "isSober"))
         case '{ Filter($queryAst, $idAst, $propertyAst) } =>
@@ -161,7 +175,7 @@ object Dsl {
 
 
         case _ => 
-          qctx.throwError(
+          Reporting.throwError(
           s"""|Cannot unlift the tree: 
               |=================== Simple ==============
               |${CodeFormatter.apply(s"object Foo { ${expr.show} }")}
@@ -189,7 +203,7 @@ object Dsl {
   def quoteImpl[T:Type](quoted: Expr[T])(implicit qctx: QuoteContext): Expr[Quoted[T]] = {
     import qctx.tasty.{Type => TTYpe, Ident => TIdent, Constant => TConstant, _, given _}
 
-    val unlifter = new Unlifter
+    val unlifter = new UnlifterEngine
     import unlifter._
     val unsealUtil = new UnsealUtil
     import unsealUtil.{qctx => _, _}
@@ -206,6 +220,25 @@ object Dsl {
     }
 
     val quotedRaw = quoted.unseal.underlyingArgument.seal
+
+    object QueryParser {
+      def astParse(expr: Expr[Any]): Ast = expr match {
+        case '{ ($query: Query[$t]).filter(${Lambda1(alias, body)}) } =>
+            Filter(astParse(query), Ident(alias), astParse(body))
+      }
+    }
+
+    object OperationParser {
+      def astParse(expr: Expr[Any]): Ast = expr match {
+          case Unseal(Apply(Select(Seal(a), "=="), List(Seal(b)))) =>
+           BinaryOperation(astParse(a), EqualityOperator.`==`, astParse(b))
+
+          case Unseal(Apply(Select(Seal(a), "!="), List(Seal(b)))) =>
+            BinaryOperation(astParse(a), EqualityOperator.`!=`, astParse(b))
+      }
+    }
+
+    // object FullParser = QueryParser.combine(OperationParser).combine(...).combine(...)
 
     // Parser Starts here
     object Parser {
@@ -238,7 +271,7 @@ object Dsl {
 
           case Unseal(Typed(inside /*Term*/, _)) => astParse(inside.seal)
 
-          case _ => qctx.throwError(
+          case _ => Reporting.throwError(
             s"""
             |Cannot parse the tree: 
             |=================== Simple ==============
@@ -280,7 +313,7 @@ object Dsl {
             case `+` => '{ StringOperator.`+` }
             case `startsWith` => '{ StringOperator.`startsWith` }
             case `contains` => '{ SetOperator.`contains` }
-            case _ => qctx.throwError(s"Not consider operator: ${op}, will add later")
+            case _ => Reporting.throwError(s"Not consider operator: ${op}, will add later")
           }
         }
       }
@@ -338,7 +371,7 @@ object Dsl {
             '{BinaryOperation(${a.lift}, ${binaryOp.lift}, ${b.lift})}
             
           case _ => 
-            qctx.throwError(s"Cannot lift the tree:\n${pprint.apply(ast)}")
+            Reporting.throwError(s"Cannot lift the tree:\n${pprint.apply(ast)}")
         }
       }
       
