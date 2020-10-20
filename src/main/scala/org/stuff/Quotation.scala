@@ -28,7 +28,7 @@ object Quotation {
     object QueryParser {
       def astParse(expr: Expr[Any]): Ast = expr match {
         case '{ ($query: Query[$t]).filter(${Lambda1(alias, body)}) } =>
-      Filter(astParse(query), Ident(alias), astParse(body))
+          Filter(astParse(query), Ident(alias), astParse(body))
       }
     }
 

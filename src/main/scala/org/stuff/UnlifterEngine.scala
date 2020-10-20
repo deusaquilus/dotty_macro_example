@@ -12,8 +12,27 @@ class UnlifterEngine(implicit qctx: QuoteContext) {
     trait Unlifter[T] {
       def unlift(elem: Expr[T]): T
     }
+    object Unlifter {
+      def Error[T](expr: Expr[T]) =
+        report.throwError(
+          s"""|Cannot unlift the tree: 
+              |=================== Simple ==============
+              |${CodeFormatter.apply(s"object Foo { ${expr.show} }")}
+              |=================== Full AST ==============
+              |${pprint.apply(expr.unseal)}
+              |=================== Use Extractors ==============
+              |${CodeFormatter.apply(s"object Foo { ${expr.unseal.showExtractors} }")}
+              """.stripMargin
+        )
+        
+      def Make[T](pf: PartialFunction[Expr[T], T]) = 
+        new Unlifter[T] {
+          def unlift(expr: Expr[T]): T = 
+            pf.lift(expr).getOrElse(Unlifter.Error(expr))
+        }
+    }
 
-    implicit def opUnnlifter: Unlifter[BinaryOperator] =  new Unlifter[BinaryOperator] {
+    given Unlifter[BinaryOperator] {
       
       import EqualityOperator.{`==` => ee, `!=` => ne}
       import BooleanOperator._
@@ -34,24 +53,24 @@ class UnlifterEngine(implicit qctx: QuoteContext) {
           case '{ StringOperator.`+` } => StringOperator.`+`
           case '{ StringOperator.`startsWith` } => `startsWith`
           case '{ SetOperator.`contains` } => `contains`
-          case _ => report.throwError(s"Not consider operator (in unlift): ${op}, will add later")
+          case _ => Unlifter.Error(op)
         }
     }
-    implicit def entityUnlifter: Unlifter[Entity] = new Unlifter[Entity] {
-      def unlift(elem: Expr[Entity]): Entity = elem match {
-        case '{ Entity(${Unseal(Literal(TConstant(name: String)))}: String, $list) } => Entity(name, List())
-      }
+
+    // Using a syntax with the Make function in the Unlifter object
+    given Unlifter[Entity] = Unlifter.Make[Entity] {
+      case '{ Entity(${Unseal(Literal(TConstant(name: String)))}: String, $list) } => Entity(name, List())
     }
-    implicit def identUnlifter: Unlifter[Ident] = new Unlifter[Ident] {
-      def unlift(elem: Expr[Ident]): Ident = elem match {
-        case '{ Ident(${Unseal(Literal(TConstant(name: String)))}) } => Ident(name)
-      }
+    // same here
+    given Unlifter[Ident] = Unlifter.Make[Ident] {
+      case '{ Ident(${Unseal(Literal(TConstant(name: String)))}) } => Ident(name)
     }
-    implicit class HasUnlifter[T](elem: Expr[T])(implicit unlifter: Unlifter[T]) {
+
+    extension [T](elem: Expr[T])(using unlifter: Unlifter[T]) {
       def unlift: T = unlifter.unlift(elem)
     }
 
-    implicit def astUnlifter: Unlifter[Ast] = new Unlifter[Ast] {
+    given Unlifter[Ast] {
       def unlift(expr: Expr[Ast]): Ast =
         expr match {
           case '{ $id: Ident } => id.unlift
@@ -83,16 +102,7 @@ class UnlifterEngine(implicit qctx: QuoteContext) {
             BinaryOperation(a, binaryOp, b)
 
 
-          case _ =>
-            report.throwError(
-              s"""|Cannot unlift the tree: 
-                  |=================== Simple ==============
-                  |${CodeFormatter.apply(s"object Foo { ${expr.show} }")}
-                  |=================== Full AST ==============
-                  |${pprint.apply(expr.unseal)}
-                  |=================== Use Extractors ==============
-                  |${CodeFormatter.apply(s"object Foo { ${expr.unseal.showExtractors} }")}
-                  """.stripMargin)
+          case _ => Unlifter.Error(expr)
         }
     }
   }
