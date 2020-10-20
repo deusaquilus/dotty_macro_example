@@ -47,7 +47,7 @@ class UnlifterEngine(implicit qctx: QuoteContext) {
         case '{ Ident(${Unseal(Literal(TConstant(name: String)))}) } => Ident(name)
       }
     }
-    implicit class HasUnlifter[T](elem: Expr[T])(using unlifter: Unlifter[T]) {
+    implicit class HasUnlifter[T](elem: Expr[T])(implicit unlifter: Unlifter[T]) {
       def unlift: T = unlifter.unlift(elem)
     }
 
