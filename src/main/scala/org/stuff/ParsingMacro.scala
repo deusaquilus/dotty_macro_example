@@ -6,7 +6,7 @@ object ParseMac {
   inline def apply(inline anyRaw: Any): Unit = ${ parseImpl('anyRaw) }
   def parseImpl(anyRaw: Expr[Any])(implicit qctx: QuoteContext): Expr[Unit] = {
     import qctx.tasty.{_, given _}
-    val unsealUtil = new Dsl.UnsealUtil
+    val unsealUtil = new UnsealUtil
     import unsealUtil.{qctx => _, _}
     val any = anyRaw.unseal.underlyingArgument.seal
 
