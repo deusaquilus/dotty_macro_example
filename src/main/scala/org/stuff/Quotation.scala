@@ -58,17 +58,17 @@ object Quotation {
           case Unseal(Literal(TConstant(str: String))) => Constant(str)
 
           case '{ ($q: Quoted[$t]).unquote } =>
-        astParse(q)
+            astParse(q)
 
           case '{ Quoted.apply[$t]($ast) } =>
-        unlifter.apply(ast)
+            unlifter.apply(ast)
 
           case '{ Dsl.query[$t] } =>
-        val name = t.unseal.tpe.classSymbol.get.name
-        Entity(name, List())
+            val name = t.unseal.tpe.classSymbol.get.name
+            Entity(name, List())
 
           case '{ ($query: Query[$t]).filter(${Lambda1(alias, body)}) } =>
-        Filter(astParse(query), Ident(alias), astParse(body))
+           Filter(astParse(query), Ident(alias), astParse(body))
 
           case Unseal(Select(TIdent(id: String), prop)) =>
             Property(Ident(id), prop)
