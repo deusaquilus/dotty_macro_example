@@ -2,6 +2,7 @@ package org.stuff
 
 import scala.quoted._
 import io.getquill.ast.{Query => AQuery, _}
+import io.getquill._
 
 object Quotation {
   def apply[T:Type](quoted: Expr[T])(implicit qctx: QuoteContext): Expr[Quoted[T]] = {

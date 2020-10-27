@@ -1,6 +1,7 @@
  package org.stuff
 
  import Dsl._
+ import io.getquill._
 
  object UseSimpleQuill2 {
 

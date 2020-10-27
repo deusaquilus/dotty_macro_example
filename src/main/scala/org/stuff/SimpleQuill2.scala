@@ -2,6 +2,7 @@ package org.stuff
 
 import scala.quoted._
 import io.getquill.ast.{Query => AQuery, _}
+import io.getquill._
 
 // // case class Person(name:Name, age:Int)
 // // case class Name(first:String, last:String)

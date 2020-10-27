@@ -11,6 +11,9 @@ object CodeFormatter {
   def apply(code: String): String =
     new Scalafmt210().format(code, "Main.scala")
 
+  def applyInFoo(code: String): String =
+    new Scalafmt210().format("object Foo {" + code + "}", "Main.scala")
+
   def main(args: Array[String]):Unit = {
     CodeFormatter.apply("object A  {  }")
   }
