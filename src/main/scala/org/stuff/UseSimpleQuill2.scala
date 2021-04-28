@@ -1,8 +1,8 @@
 package org.stuff
 
-import Dsl._
-
 object UseSimpleQuill2 {
+  import MiniQuill._
+  import MiniQuill.Dsl._
 
   case class Person(isSober:Boolean, isRussian:Boolean, isHuman:Boolean)
   implicit inline def autoUnquote[T](inline quoted: Quoted[T]): T = unquote(quoted)
