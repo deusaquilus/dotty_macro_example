@@ -4,3 +4,4 @@ target
 .dotty-ide*
 nohup.out
 .vscode
+.metals
