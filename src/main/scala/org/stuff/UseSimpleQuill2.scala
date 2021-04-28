@@ -20,6 +20,6 @@ object UseSimpleQuill2 {
 
     //PrintMac(q1)
     
-    println(pprint.apply(q2))
+    println(q2)
   }
 }

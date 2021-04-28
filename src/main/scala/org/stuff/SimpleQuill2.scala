@@ -43,7 +43,7 @@ object Dsl {
 
   inline def quote[T](inline quoted:T): Quoted[T] = ${ quoteImpl[T]('quoted) }
   def quoteImpl[T:Type](quoted: Expr[T])(using Quotes): Expr[Quoted[T]] = {
-    import quotes.reflect.{Type => TTYpe, Ident => TIdent, Constant => TConstant, _}
+    import quotes.reflect.{Ident => TIdent, Constant => TConstant, _}
 
     val quotedRaw = quoted.asTerm.underlyingArgument.asExpr
 
@@ -151,7 +151,7 @@ object Unlifter:
 
   given unliftIdent: NiceUnliftable[Ident] with
     def unlift =
-      case '{ Ident(${Expr(name: String)}, $quat) } => Ident(name, unliftedQuat)
+      case '{ Ident(${Expr(name: String)}) } => Ident(name)
 
   given unliftAst: NiceUnliftable[Ast] with
     def unlift =
@@ -186,25 +186,23 @@ object Lifter:
 
   trait NiceLiftable[T] extends ToExpr[T]:
     def lift: Quotes ?=> PartialFunction[T, Expr[T]]
-    def apply(t: T)(using Quotes): Expr[T] = 
-      import quotes.reflect._
-      lift.lift(t).getOrElse { throw new IllegalArgumentException(s"Could not Lift ${Printer.TreeShortCode.show(expr.asTerm)}") }
+    def apply(t: T)(using Quotes): Expr[T] = lift.lift(t).getOrElse { throw new IllegalArgumentException(s"Could not Lift ${t}") }
     def unapply(t: T)(using Quotes) = Some(apply(t))
 
   given liftableProperty : NiceLiftable[Property] with
     def lift =
-      case Property(core: Ast, name: String) => '{ Property.Opinionated(${core.expr}, ${name.expr}) }
+      case Property(core: Ast, name: String) => '{ Property(${core.expr}, ${name.expr}) }
 
   given liftableIdent : NiceLiftable[Ident] with
     def lift =
-      case Ident(name: String, quat) => '{ AIdent(${name.expr}, ${quat.expr})  }
+      case Ident(name: String) => '{ Ident(${name.expr})  }
 
-  extension [T: TType](list: List[T])(using ToExpr[T], Quotes)
+  extension [T: Type](list: List[T])(using ToExpr[T], Quotes)
     def spliceVarargs = Varargs(list.map(Expr(_)).toSeq)
 
   given liftableEntity : NiceLiftable[Entity] with
     def lift = 
-      case Entity(name: String, list, quat) => '{ Entity(${name.expr}, ${list .expr}, ${quat.expr})  }
+      case Entity(name: String) => '{ Entity(${name.expr})  }
 
   given liftableTuple: NiceLiftable[Tuple] with
     def lift = 
@@ -212,15 +210,18 @@ object Lifter:
 
   given liftableAst : NiceLiftable[Ast] with
     def lift =
-      case Constant(tmc.ConstantValue(v), quat) => '{ Constant(${tmc.ConstantExpr(v)}, ${quat.expr}) }
-      case Function(params: List[AIdent], body: Ast) => '{ Function(${params.expr}, ${body.expr}) }
+      case Constant(v: Double, quat) => '{ Constant(${Expr(v)}) }
+      case Constant(v: Boolean, quat) => '{ Constant(${Expr(v)}) }
+      case Constant(v: String, quat) => '{ Constant(${Expr(v)}) }
+      case Constant(v: Int, quat) => '{ Constant(${Expr(v)}) }
+      case Function(params: List[Ident], body: Ast) => '{ Function(${params.expr}, ${body.expr}) }
       case FunctionApply(function: Ast, values: List[Ast]) => '{ FunctionApply(${function.expr}, ${values.expr}) }
       case v: Entity => liftableEntity(v)
       case v: Tuple => liftableTuple(v)
-      case Map(query: Ast, alias: AIdent, body: Ast) => '{ Map(${query.expr}, ${alias.expr}, ${body.expr})  }
-      case FlatMap(query: Ast, alias: AIdent, body: Ast) => '{ FlatMap(${query.expr}, ${alias.expr}, ${body.expr})  }
-      case Filter(query: Ast, alias: AIdent, body: Ast) => '{ Filter(${query.expr}, ${alias.expr}, ${body.expr})  }
-      case BinaryOperation(a: Ast, operator: BinaryOperator, b: Ast) => '{ BinaryOperation(${a.expr}, ${liftOperator(operator).asInstanceOf[Expr[BinaryOperator]]}, ${b.expr})  }
+      case Map(query: Ast, alias: Ident, body: Ast) => '{ Map(${query.expr}, ${alias.expr}, ${body.expr})  }
+      case FlatMap(query: Ast, alias: Ident, body: Ast) => '{ FlatMap(${query.expr}, ${alias.expr}, ${body.expr})  }
+      case Filter(query: Ast, alias: Ident, body: Ast) => '{ Filter(${query.expr}, ${alias.expr}, ${body.expr})  }
+      case BinaryOperation(a: Ast, operator: Operator, b: Ast) => '{ BinaryOperation(${a.expr}, ${liftOperator(operator).asInstanceOf[Expr[Operator]]}, ${b.expr})  }
       case v: Property => liftableProperty(v)
       case v: Ident => liftableIdent(v)
 
