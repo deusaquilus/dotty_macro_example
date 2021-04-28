@@ -146,6 +146,7 @@ object MiniQuill:
               val lastPartAst = astParse(lastPart.asExpr)
               Block((partsAsts :+ lastPartAst))
             case Unseal(Select(TIdent(id: String), prop)) => Property(Ident(id), prop)
+            case id @ Unseal(i @ TIdent(x)) => Ident(x)
             case Unseal(Typed(inside /*Term*/, _)) => astParse(inside.asExpr)
             case _ => report.throwError(
               s"""
