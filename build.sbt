@@ -13,5 +13,7 @@ lazy val root = project
       "-language:implicitConversions"
     ),
 
-    libraryDependencies ++= Seq()
+    libraryDependencies ++= Seq(
+      // ("com.lihaoyi" %% "pprint" % "0.5.6").withDottyCompat(scalaVersion.value)
+    )
   )

@@ -15,6 +15,8 @@ object MiniQuill:
   case class Constant(value: Any) extends Ast
   case class Function(params: List[Ident], body: Ast) extends Ast
   case class FunctionApply(function: Ast, values: List[Ast]) extends Ast
+  case class Block(statements: List[Ast]) extends Ast
+  case class Val(name: Ident, body: Ast) extends Ast
 
   sealed trait Operator
   object Operator:
@@ -41,11 +43,12 @@ object MiniQuill:
       import quotes.reflect._
       '{ $quoted.unquote } /*Quoted[Query[T]] => Query[T]*/
     }
-      implicit inline def autoUnquote[T](inline quoted: Quoted[T]): T = unquote(quoted)
+    implicit inline def autoUnquote[T](inline quoted: Quoted[T]): T = unquote(quoted)
 
+    /** ============================================ Quotation ===================================== **/
     inline def quote[T](inline quoted:T): Quoted[T] = ${ quoteImpl[T]('quoted) }
     def quoteImpl[T:Type](quoted: Expr[T])(using Quotes): Expr[Quoted[T]] = {
-      import quotes.reflect.{Ident => TIdent, Constant => TConstant, _}
+      import quotes.reflect.{Ident => TIdent, Constant => TConstant, Block => TBlock, ValDef => TValDef, _}
 
       val quotedRaw = quoted.asTerm.underlyingArgument.asExpr
 
@@ -54,8 +57,8 @@ object MiniQuill:
         object Lambda1:
           def unapplyTerm(term: Term): Option[(String, Term)] = 
             term match
-              case Lambda(List(ValDef(ident, Inferred(), None)), methodBody) => Some((ident, methodBody))
-              case Block(List(), expr) => unapplyTerm(expr)
+              case Lambda(List(TValDef(ident, Inferred(), None)), methodBody) => Some((ident, methodBody))
+              case TBlock(List(), expr) => unapplyTerm(expr)
               case _ => None
 
           def unapply(term: Expr[_]): Option[(String, Expr[_])] =
@@ -89,7 +92,7 @@ object MiniQuill:
         object TupleIdent:
           def unapply(term: Term): Boolean =
             term match
-              case Ident(TupleName()) => true
+              case TIdent(TupleName()) => true
               case _ => false
 
         object NamedOp1:
@@ -97,6 +100,25 @@ object MiniQuill:
             UntypeExpr(expr) match
               case Unseal(Apply(Select(Untype(left), op: String), Untype(right) :: Nil)) => Some(left.asExpr, op, right.asExpr)
               case _ => None
+
+        object ValDefTerm:
+          def unapply(tree: Tree): Option[(Ident, Expr[_])] =
+            tree match {
+              case DefDef(name, paramss, tpe, rhsOpt) if (paramss.length == 0) =>
+                val body =
+                  rhsOpt match
+                    case None => report.throwError(s"Cannot parse 'val' clause with no '= rhs' (i.e. equals and right hand side) of ${Printer.TreeStructure.show(tree)}")
+                    case Some(rhs) => rhs
+                Some(Ident(name), body.asExpr)
+              case TValDef(name, tpe, rhsOpt) =>
+                val body =
+                  rhsOpt match
+                    case None => report.throwError(s"Cannot parse 'val' clause with no '= rhs' (i.e. equals and right hand side) of ${Printer.TreeStructure.show(tree)}")
+                    case Some(rhs) => rhs
+                Some((Ident(name), body.asExpr))
+              case _ => None
+            }
+        end ValDefTerm
       end Extractors
 
       /** =========================== Parse ======================== **/
@@ -106,14 +128,23 @@ object MiniQuill:
           expr match
             case '{ ($q: Quoted[t]).unquote } => astParse(q)
             case '{ Quoted.apply[t]($ast) } => Unlifter(ast)
-            case '{ Dsl.query[t] } => Entity(TypeRepr.of[t].classSymbol.get.name)
+            case '{ query[t] } => Entity(TypeRepr.of[t].classSymbol.get.name)
             case '{ ($query: Query[t]).filter(${Lambda1(alias, body)}) } => Filter(astParse(query), Ident(alias), astParse(body))
             case '{ ($query: Query[t]).withFilter(${Lambda1(alias, body)}) } => Filter(astParse(query), Ident(alias), astParse(body))
-            case '{ ($query: Query[t]).map(${Lambda1(alias, body)}) } => Map(astParse(query), Ident(alias), astParse(body))
-            case '{ ($query: Query[t]).flatMap(${Lambda1(alias, body)}) } => Map(astParse(query), Ident(alias), astParse(body))
+            case '{ ($query: Query[t]).map[mt](${Lambda1(alias, body)}) } => Map(astParse(query), Ident(alias), astParse(body))
+            case '{ ($query: Query[t]).flatMap[mt](${Lambda1(alias, body)}) } => FlatMap(astParse(query), Ident(alias), astParse(body))
             case NamedOp1(left, "==", right) => BinaryOperation(astParse(left), Operator.==, astParse(right))
             case NamedOp1(left, "&&", right) => BinaryOperation(astParse(left), Operator.&&, astParse(right))
             case Unseal(Apply(TypeApply(Select(TupleIdent(), "apply"), types), values)) => Tuple(values.map(v => astParse(v.asExpr)))
+            case block @ Unseal(TBlock(parts, lastPart)) if (parts.length > 0) =>
+              val partsAsts =
+                parts.map {
+                  case term: Term => astParse(term.asExpr)
+                  case ValDefTerm(ast, bodyExpr) => Val(ast, astParse(bodyExpr))
+                  case other => report.throwError(s"Illegal statement ${other.show} in block ${block.show}")
+                }
+              val lastPartAst = astParse(lastPart.asExpr)
+              Block((partsAsts :+ lastPartAst))
             case Unseal(Select(TIdent(id: String), prop)) => Property(Ident(id), prop)
             case Unseal(Typed(inside /*Term*/, _)) => astParse(inside.asExpr)
             case _ => report.throwError(
