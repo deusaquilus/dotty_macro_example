@@ -9,7 +9,6 @@ case class Filter(query:Ast, alias:Ident, body: Ast) extends Ast
 case class Map(query:Ast, alias:Ident, body: Ast) extends Ast
 case class FlatMap(query:Ast, alias:Ident, body: Ast) extends Ast
 case class Property(ast: Ast, name: String) extends Ast
-case class Constant(value:String) extends Ast
 case class Tuple(values: List[Ast]) extends Ast
 case class Constant(value: Any) extends Ast
 case class Function(params: List[Ident], body: Ast) extends Ast
@@ -28,11 +27,10 @@ case class Quoted[T](ast: Ast) {
 
 class Query[T] {
   def filter(e:T => Boolean): Query[T] 	    = throw new IllegalArgumentException("This can only be used inside a quoted block")
+  def withFilter(e:T => Boolean): Query[T] 	    = throw new IllegalArgumentException("This can only be used inside a quoted block")
   def map[R](e:T => R): Query[R]     			  = throw new IllegalArgumentException("This can only be used inside a quoted block")
   def flatMap[R](e:T => Query[R]): Query[R] = throw new IllegalArgumentException("This can only be used inside a quoted block")
 }
-
-// TypeApply(Select(Ident(Dsl), query), List(Type[Person]))
 
 object Dsl {
   def query[T]: Query[T] = throw new IllegalArgumentException("This can only be used inside a quoted block")
@@ -47,76 +45,76 @@ object Dsl {
   def quoteImpl[T:Type](quoted: Expr[T])(using Quotes): Expr[Quoted[T]] = {
     import quotes.reflect.{Type => TTYpe, Ident => TIdent, Constant => TConstant, _}
 
-  val quotedRaw = quoted.asTerm.underlyingArgument.asExpr
+    val quotedRaw = quoted.asTerm.underlyingArgument.asExpr
 
-  /** =========================== Parsing Helpers ======================== **/
-  object Extractors:
-    object Lambda1:
-      def unapplyTerm(term: Term): Option[(String, Term)] = 
-        term match
-          case Lambda(List(ValDef(ident, Inferred(), None)), methodBody) => Some((ident, methodBody))
-          case Block(List(), expr) => unapplyTerm(expr)
-          case _ => None
+    /** =========================== Parsing Helpers ======================== **/
+    object Extractors:
+      object Lambda1:
+        def unapplyTerm(term: Term): Option[(String, Term)] = 
+          term match
+            case Lambda(List(ValDef(ident, Inferred(), None)), methodBody) => Some((ident, methodBody))
+            case Block(List(), expr) => unapplyTerm(expr)
+            case _ => None
 
-      def unapply(term: Expr[_]): Option[(String, Expr[_])] =
-        unapplyTerm(term.asTerm).map((str, term) => (str, term.asExpr))
-    end Lambda1
+        def unapply(term: Expr[_]): Option[(String, Expr[_])] =
+          unapplyTerm(term.asTerm).map((str, term) => (str, term.asExpr))
+      end Lambda1
 
-    object UntypeExpr:
-      def unapply(expr: Expr[_]): Option[Expr[_]] = Untype.unapply(expr.asTerm).map(_.asExpr)
-      def apply(expr: Expr[_]): Expr[_] = Untype.unapply(expr.asTerm).map(_.asExpr).get
+      object UntypeExpr:
+        def unapply(expr: Expr[_]): Option[Expr[_]] = Untype.unapply(expr.asTerm).map(_.asExpr)
+        def apply(expr: Expr[_]): Expr[_] = Untype.unapply(expr.asTerm).map(_.asExpr).get
 
-    object Untype:
-      def unapply(term: Term): Option[Term] = term match
-        case TypedMatroshkaTerm(t) => Some(t)
-        case other => Some(other)
-      def apply(term: Term) = Untype.unapply(term).get
+      object Untype:
+        def unapply(term: Term): Option[Term] = term match
+          case TypedMatroshkaTerm(t) => Some(t)
+          case other => Some(other)
+        def apply(term: Term) = Untype.unapply(term).get
 
-    object TypedMatroshkaTerm
-      def recurse(innerTerm: Term): Term = innerTerm match
-        case Typed(innerTree, _) => recurse(innerTree)
-        case other => other
-      def unapply(term: Term): Option[Term] = term match
-        case Typed(tree, _) => Some(recurse(tree))
-        case other => None
+      object TypedMatroshkaTerm:
+        def recurse(innerTerm: Term): Term = innerTerm match
+          case Typed(innerTree, _) => recurse(innerTree)
+          case other => other
+        def unapply(term: Term): Option[Term] = term match
+          case Typed(tree, _) => Some(recurse(tree))
+          case other => None
 
-    object Unseal:
-      def unapply(expr: Expr[_]): Option[Term] = Some(expr.asTerm)
+      object Unseal:
+        def unapply(expr: Expr[_]): Option[Term] = Some(expr.asTerm)
 
-    object TupleName:
-      def unapply(str: String): Boolean = str.matches("Tuple[0-9]+")
+      object TupleName:
+        def unapply(str: String): Boolean = str.matches("Tuple[0-9]+")
 
-    object TupleIdent:
-      def unapply(term: Term): Boolean =
-        term match
-          case Ident(TupleName()) => true
-          case _ => false
+      object TupleIdent:
+        def unapply(term: Term): Boolean =
+          term match
+            case Ident(TupleName()) => true
+            case _ => false
 
-    object NamedOp1:
-      def unapply(expr: Expr[_]): Option[(Expr[_], String, Expr[_])] =
-        UntypeExpr(expr) match
-          case Unseal(Apply(Select(Untype(left), op: String), Untype(right) :: Nil)) => Some(left.asExpr, op, right.asExpr)
-          case _ => None
-  end Extractors
+      object NamedOp1:
+        def unapply(expr: Expr[_]): Option[(Expr[_], String, Expr[_])] =
+          UntypeExpr(expr) match
+            case Unseal(Apply(Select(Untype(left), op: String), Untype(right) :: Nil)) => Some(left.asExpr, op, right.asExpr)
+            case _ => None
+    end Extractors
 
     /** =========================== Parse ======================== **/
     object Parser:
       import Extractors._
       def astParse(expr: Expr[Any]): Ast = 
         expr match
-          case '{ ($q: Quoted[$t]).unquote } => astParse(q)
-          case '{ Quoted.apply[$t]($ast) } => Unlifter(ast)
-          case '{ Dsl.query[$t] } => Entity(t.asTerm.tpe.classSymbol.get.name)
-          case '{ ($query: Query[$t]).filter(${Lambda1(alias, body)}) } => Filter(astParse(query), Ident(alias), astParse(body))
-          case '{ ($query: Query[$t]).withFilter(${Lambda1(alias, body)}) } => Filter(astParse(query), Ident(alias), astParse(body))
-          case '{ ($query: Query[$t]).map(${Lambda1(alias, body)}) } => Map(astParse(query), Ident(alias), astParse(body))
-          case '{ ($query: Query[$t]).flatMap(${Lambda1(alias, body)}) } => Map(astParse(query), Ident(alias), astParse(body))
+          case '{ ($q: Quoted[t]).unquote } => astParse(q)
+          case '{ Quoted.apply[t]($ast) } => Unlifter(ast)
+          case '{ Dsl.query[t] } => Entity(TypeRepr.of[t].classSymbol.get.name)
+          case '{ ($query: Query[t]).filter(${Lambda1(alias, body)}) } => Filter(astParse(query), Ident(alias), astParse(body))
+          case '{ ($query: Query[t]).withFilter(${Lambda1(alias, body)}) } => Filter(astParse(query), Ident(alias), astParse(body))
+          case '{ ($query: Query[t]).map(${Lambda1(alias, body)}) } => Map(astParse(query), Ident(alias), astParse(body))
+          case '{ ($query: Query[t]).flatMap(${Lambda1(alias, body)}) } => Map(astParse(query), Ident(alias), astParse(body))
           case NamedOp1(left, "==", right) => BinaryOperation(astParse(left), Operator.==, astParse(right))
           case NamedOp1(left, "&&", right) => BinaryOperation(astParse(left), Operator.&&, astParse(right))
           case Unseal(Apply(TypeApply(Select(TupleIdent(), "apply"), types), values)) => Tuple(values.map(v => astParse(v.asExpr)))
           case Unseal(Select(TIdent(id: String), prop)) => Property(Ident(id), prop)
           case Unseal(Typed(inside /*Term*/, _)) => astParse(inside.asExpr)
-          case _ => qctx.throwError(
+          case _ => report.throwError(
             s"""
             |Cannot parse the tree: 
             |=================== Simple ==============
@@ -140,14 +138,20 @@ object Unlifter:
   extension [T](t: Expr[T])(using FromExpr[T], Quotes)
     def unexpr: T = t.valueOrError
 
-  trait NiceUnliftable[T: ClassTag] extends FromExpr[T]:
+  trait NiceUnliftable[T] extends FromExpr[T]:
     def unlift: Quotes ?=> PartialFunction[Expr[T], T]
-    def apply(expr: Expr[T])(using Quotes): T = unlift.lift(expr).getOrElse { throw new IllegalArgumentException(s"Could not Unlift ${Printer.TreeShortCode.show(expr.asTerm)}") }
+    def apply(expr: Expr[T])(using Quotes): T = 
+      import quotes.reflect._
+      unlift.lift(expr).getOrElse { throw new IllegalArgumentException(s"Could not Unlift ${Printer.TreeShortCode.show(expr.asTerm)}") }
     def unapply(expr: Expr[T])(using Quotes): Option[T] = unlift.lift(expr)
 
   given unliftProperty: NiceUnliftable[Property] with
     def unlift =
-      case '{ Property(${ast}, ${name}) } => Property(ast.unexpr, constString(name))
+      case '{ Property(${ast}, ${Expr(name: String)}) } => Property(ast.unexpr, name)
+
+  given unliftIdent: NiceUnliftable[Ident] with
+    def unlift =
+      case '{ Ident(${Expr(name: String)}, $quat) } => Ident(name, unliftedQuat)
 
   given unliftAst: NiceUnliftable[Ast] with
     def unlift =
@@ -180,9 +184,11 @@ object Lifter:
   extension [T](t: T)(using ToExpr[T], Quotes)
     def expr: Expr[T] = Expr(t)
 
-  trait NiceLiftable[T: ClassTag] extends ToExpr[T]:
+  trait NiceLiftable[T] extends ToExpr[T]:
     def lift: Quotes ?=> PartialFunction[T, Expr[T]]
-    def apply(t: T)(using Quotes): Expr[T] = lift.lift(t).getOrElse { throw new IllegalArgumentException(s"Could not Lift ${Printer.TreeShortCode.show(expr.asTerm)}") }
+    def apply(t: T)(using Quotes): Expr[T] = 
+      import quotes.reflect._
+      lift.lift(t).getOrElse { throw new IllegalArgumentException(s"Could not Lift ${Printer.TreeShortCode.show(expr.asTerm)}") }
     def unapply(t: T)(using Quotes) = Some(apply(t))
 
   given liftableProperty : NiceLiftable[Property] with
