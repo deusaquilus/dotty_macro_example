@@ -5,3 +5,4 @@ target
 nohup.out
 .vscode
 .metals
+.bsp
