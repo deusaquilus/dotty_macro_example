@@ -40,7 +40,8 @@ object MiniQuill:
     def unquoteImpl[T:Type](quoted: Expr[Quoted[T]])(using Quotes): Expr[T] = {
       import quotes.reflect._
       '{ $quoted.unquote } /*Quoted[Query[T]] => Query[T]*/
-    } 
+    }
+      implicit inline def autoUnquote[T](inline quoted: Quoted[T]): T = unquote(quoted)
 
     inline def quote[T](inline quoted:T): Quoted[T] = ${ quoteImpl[T]('quoted) }
     def quoteImpl[T:Type](quoted: Expr[T])(using Quotes): Expr[Quoted[T]] = {
