@@ -1,6 +1,6 @@
 package org.stuff
 
-object UseSimpleQuill2 {
+object UseMiniQuill {
   import MiniQuill._
   import MiniQuill.Dsl._
 
